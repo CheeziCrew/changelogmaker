@@ -56,19 +56,63 @@ jobs:
         name: generate_complete_changelog_macos_${{ github.run_id }}
         path: dist/generate_complete_changelog
 
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential
+
+    - name: Create Executable
+      uses: sayyid5416/pyinstaller@v1
+      with:
+        python_ver: '3.12'
+        spec: 'generate_complete_changelog.spec'
+        requirements: 'requirements.txt'
+        upload_exe_with_name: 'generate_complete_changelog'
+        options: --onefile, --name "generate_complete_changelog"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: generate_complete_changelog_linux_${{ github.run_id }}
+        path: dist/generate_complete_changelog
+
   create-release:
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Download Windows Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: generate_complete_changelog_windows_${{ github.run_id }}
+        path: artifacts/windows
+
+    - name: Download macOS Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: generate_complete_changelog_macos_${{ github.run_id }}
+        path: artifacts/macos
+
+    - name: Download Linux Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: generate_complete_changelog_linux_${{ github.run_id }}
+        path: artifacts/linux
 
     - name: Create Release
       id: create_release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist/generate_complete_changelog_windows_${{ github.run_id }}/generate_complete_changelog.exe
-          dist/generate_complete_changelog_macos_${{ github.run_id }}/generate_complete_changelog
+          artifacts/windows/generate_complete_changelog.exe
+          artifacts/macos/generate_complete_changelog
+          artifacts/linux/generate_complete_changelog
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
