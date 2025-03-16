@@ -11,7 +11,8 @@ def find_openapi_yaml(repo_path):
         if 'target' in root:
             continue
         if 'openapi.yaml' in files:
-            return os.path.join(root, 'openapi.yaml')
+            # Normalize the path before returning
+            return os.path.normpath(os.path.join(root, 'openapi.yaml')).replace('\\', '/')
     return None
 
 def extract_endpoints(spec):
@@ -26,7 +27,9 @@ def extract_endpoints(spec):
     return endpoints
 
 def get_file_content(branch, filepath):
-    cmd = ['git', 'show', f'{branch}:{filepath}']
+    # Normalize filepath to use forward slashes
+    normalized_path = filepath.replace('\\', '/')
+    cmd = ['git', 'show', f'{branch}:{normalized_path}']
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Error retrieving file from branch '{branch}': {result.stderr.strip()}")
