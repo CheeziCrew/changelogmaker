@@ -1,0 +1,166 @@
+name: Build Executable
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  tag-version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_tag: ${{ steps.create_tag.outputs.new_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get latest tag
+        id: get_latest_tag
+        run: |
+          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=${latest_tag}" >> $GITHUB_OUTPUT
+
+      - name: Create new tag
+        id: create_tag
+        run: |
+          latest_tag=${{ steps.get_latest_tag.outputs.latest_tag }}
+          major=$(echo $latest_tag | cut -d. -f1)
+          minor=$(echo $latest_tag | cut -d. -f2)
+          new_minor=$((minor + 1))
+          new_tag="${major}.${new_minor}"
+          echo "new_tag=${new_tag}" >> $GITHUB_OUTPUT
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git tag $new_tag
+          git push origin $new_tag
+
+  build-windows:
+    needs: tag-version
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create Executable
+      uses: sayyid5416/pyinstaller@v1
+      with:
+        python_ver: '3.8'
+        spec: 'generate_complete_changelog.spec'
+        requirements: 'requirements.txt'
+        upload_exe_with_name: 'generate_complete_changelog.exe'
+        options: --onefile, --name "generate_complete_changelog"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: generate_complete_changelog_windows_${{ github.run_id }}
+        path: dist/generate_complete_changelog.exe
+
+  build-macos:
+    needs: tag-version
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create Executable
+      uses: sayyid5416/pyinstaller@v1
+      with:
+        python_ver: '3.12'
+        spec: 'generate_complete_changelog.spec'
+        requirements: 'requirements.txt'
+        upload_exe_with_name: 'generate_complete_changelog_macos'
+        options: --onefile, --name "generate_complete_changelog_macos"
+
+    - name: Rename artifact
+      run: mv dist/generate_complete_changelog dist/generate_complete_changelog_macos
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: generate_complete_changelog_macos_${{ github.run_id }}
+        path: dist/generate_complete_changelog_macos
+
+  build-linux:
+    needs: tag-version
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential
+
+    - name: Create Executable
+      uses: sayyid5416/pyinstaller@v1
+      with:
+        python_ver: '3.12'
+        spec: 'generate_complete_changelog.spec'
+        requirements: 'requirements.txt'
+        upload_exe_with_name: 'generate_complete_changelog_linux'
+        options: --onefile, --name "generate_complete_changelog_linux"
+
+    - name: Rename artifact
+      run: mv dist/generate_complete_changelog dist/generate_complete_changelog_linux
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: generate_complete_changelog_linux_${{ github.run_id }}
+        path: dist/generate_complete_changelog_linux
+
+  create-release:
+    needs: [tag-version,build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download Windows Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: generate_complete_changelog_windows_${{ github.run_id }}
+        path: artifacts/windows
+
+    - name: Download macOS Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: generate_complete_changelog_macos_${{ github.run_id }}
+        path: artifacts/macos
+
+    - name: Download Linux Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: generate_complete_changelog_linux_${{ github.run_id }}
+        path: artifacts/linux
+
+    - name: Debug Artifacts
+      run: |
+        ls -R artifacts/
+
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.tag-version.outputs.new_tag }}
+        files: |
+          artifacts/windows/generate_complete_changelog.exe
+          artifacts/macos/generate_complete_changelog_macos
+          artifacts/linux/generate_complete_changelog_linux
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
